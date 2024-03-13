@@ -1,0 +1,562 @@
+Program.Sub.ScreenSU.Start
+Gui.Form..Create
+Gui.Form..Caption("Upload Purchase Order")
+Gui.Form..Size(11415,2145)
+Gui.Form..MinX(0)
+Gui.Form..MinY(0)
+Gui.Form..Position(0,0)
+Gui.Form..BackColor(-2147483633)
+Gui.Form..MousePointer(0)
+Gui.Form..Event(UnLoad,UnLoad)
+Gui.Form.cmdUp1File.Create(Button)
+Gui.Form.cmdUp1File.Size(1200,375)
+Gui.Form.cmdUp1File.Position(195,795)
+Gui.Form.cmdUp1File.TabStop(True)
+Gui.Form.cmdUp1File.TabIndex(3)
+Gui.Form.cmdUp1File.Caption("Upload 1 File")
+Gui.Form.cmdUp1File.Event(Click,cmdUp1File_Click)
+Gui.Form.cmdUpAll.Create(Button)
+Gui.Form.cmdUpAll.Size(1200,375)
+Gui.Form.cmdUpAll.Position(195,1275)
+Gui.Form.cmdUpAll.TabStop(True)
+Gui.Form.cmdUpAll.TabIndex(4)
+Gui.Form.cmdUpAll.Caption("Upload All")
+Gui.Form.cmdUpAll.Event(Click,cmdUpAll_Click)
+Gui.Form.txt1FilePath.Create(TextBox,"",True,10155,300,0,195,360,True,0,"Arial",8,-2147483643,1)
+Gui.Form.txt1FilePath.TabStop(True)
+Gui.Form.txt1FilePath.TabIndex(1)
+Gui.Form.cmdBrowseFile.Create(Button)
+Gui.Form.cmdBrowseFile.Size(585,375)
+Gui.Form.cmdBrowseFile.Position(10440,330)
+Gui.Form.cmdBrowseFile.TabStop(True)
+Gui.Form.cmdBrowseFile.TabIndex(2)
+Gui.Form.cmdBrowseFile.Caption("^")
+Gui.Form.cmdBrowseFile.Event(Click,cmdBrowseFile_Click)
+Gui.Form.lbl1.Create(Label,"File path",True,1935,255,0,195,135,True,0,"Arial",8,-2147483633,0)
+Gui.Form.lbl2.Create(Label,"Max Line",True,810,255,0,8970,855,True,0,"Arial",8,-2147483633,0)
+Gui.Form.txtMaxLine.Create(TextBox,"100",True,540,300,0,9810,765,True,0,"Arial",8,-2147483643,1)
+Gui.Form.txtMaxLine.NumericOnly(2)
+Gui.F_Log..Create
+Gui.F_Log..Caption("Purchase Order Upload Log")
+Gui.F_Log..Size(15360,10140)
+Gui.F_Log..MinX(0)
+Gui.F_Log..MinY(0)
+Gui.F_Log..Position(0,0)
+Gui.F_Log..BackColor(-2147483633)
+Gui.F_Log..MousePointer(0)
+Gui.F_Log..Event(UnLoad,Unload)
+Gui.F_Log.txtLog.Create(TextBoxR)
+Gui.F_Log.txtLog.Size(14820,9240)
+Gui.F_Log.txtLog.Position(165,120)
+Gui.F_ProBar..Create
+Gui.F_ProBar..Caption("Progress")
+Gui.F_ProBar..Size(11655,1530)
+Gui.F_ProBar..MinX(0)
+Gui.F_ProBar..MinY(0)
+Gui.F_ProBar..Position(0,0)
+Gui.F_ProBar..BackColor(-2147483633)
+Gui.F_ProBar..MousePointer(0)
+Gui.F_ProBar..Event(UnLoad,F_ProBar_UnLoad)
+Gui.F_ProBar.proBarAll.Create(ProgressBar)
+Gui.F_ProBar.proBarAll.Size(10785,255)
+Gui.F_ProBar.proBarAll.Position(360,450)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+v.Global.sLog.Declare
+v.Global.sLogFilePath.Declare
+v.Global.iFileHandle.Declare
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'BN, Sept 15, 2018
+'This project will upload PO lines to an existing PO from an excel file
+'The program can upload 1 by 1 or all files in folder Busint\Custom\PurchaseOrder
+'After uploading, if successful, will move excel file from Busint\Custom\PurchaseOrder to Busint\Custom\PO_Uploaded
+'The moved file will be named as OriginalFileName_User_CCC_TimeStamp (CCC is company code)
+'The process will be recorded to a log file named: User_CCC_CurrentDate.txt in folder Busint\Custom\PurchaseOrder_Log
+'The after the process finishes, the log info will be also displayed in a popup window for user to view.
+
+f.Intrinsic.Control.Try
+	V.Local.sError.Declare
+	V.Local.bExists.Declare
+	f.ODBC.Connection!conx.OpenCompanyConnection
+	
+	'Check
+	f.Intrinsic.Control.CallSub("Check_Folders")
+	f.Intrinsic.Control.CallSub("Check_Log_File")
+	'Get Inventory Parts and put it a dictionary used to later validate Part number
+	f.Data.Dictionary.CreateFromSQL("InvPartsDict","conx","Select Part, Part from V_Inventory_Mstr")
+	f.Data.Dictionary.SetDefaultReturn("InvPartsDict","")
+	'Get GL account and put in a dictionary used to later validate GL Account
+	f.Data.Dictionary.CreateFromSQL("GLAccountDict","conx","Select GL_Account,GL_Account from V_GL_Master")
+	f.Data.Dictionary.SetDefaultReturn("GLAccountDict","")	
+	
+	gui.Form..Show
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}GAB Version: {5}}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")	
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.UnLoad.Start
+'Close connection if opened and end
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	
+	'Check connection if open, close it
+	F.Intrinsic.Control.If(V.ODBC.conx.State,=,1)
+		F.ODBC.Connection!conx.close
+	F.Intrinsic.Control.EndIf	
+	'End program
+	f.Intrinsic.Control.End
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End	
+F.Intrinsic.Control.EndTry
+Program.Sub.UnLoad.End
+
+Program.Sub.Check_Folders.Start
+'Check the PurchaseOrders and PO_Uploaded folders
+f.Intrinsic.Control.Try
+	v.Local..BulkDeclareString(sError,sDirToCheck)
+	v.Local.bExists.Declare	
+	
+	'Check Directories
+	f.Intrinsic.String.Build("{0}\Custom\PurchaseOrders",v.Caller.BusintDir,v.Local.sDirToCheck)	
+	F.Intrinsic.File.DirExists(V.Local.sDirToCheck,V.Local.bExists)
+	f.Intrinsic.Control.If(v.Local.bExists.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDirToCheck)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.String.Build("{0}\Custom\PO_Uploaded",v.Caller.BusintDir,v.Local.sDirToCheck)	
+	F.Intrinsic.File.DirExists(V.Local.sDirToCheck,V.Local.bExists)
+	f.Intrinsic.Control.If(v.Local.bExists.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDirToCheck)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.String.Build("{0}\Custom\PurchaseOrders_Log",v.Caller.BusintDir,v.Local.sDirToCheck)	
+	F.Intrinsic.File.DirExists(V.Local.sDirToCheck,V.Local.bExists)
+	f.Intrinsic.Control.If(v.Local.bExists.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDirToCheck)
+	f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry
+Program.Sub.Check_Folders.End
+
+Program.Sub.Check_Log_File.Start
+'Check the Log File, if not exist, create one
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.bExists.Declare	
+	
+	f.Intrinsic.String.Build("{0}\Custom\PurchaseOrders_Log\{1}_{2}_{3}.txt",v.Caller.BusintDir,v.Caller.User,v.Caller.CompanyCode,v.Ambient.Date.FormatMMDDYY,v.Global.sLogFilePath)
+	'Check
+	F.Intrinsic.File.Exists(V.Global.sLogFilePath,V.Local.bExists)
+	f.Intrinsic.Control.If(v.Local.bExists.Not)
+		'Create file
+		f.Intrinsic.File.String2File(v.Global.sLogFilePath,"")
+	f.Intrinsic.Control.EndIf	
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry
+Program.Sub.Check_Log_File.End
+
+Program.Sub.cmdBrowseFile_Click.Start
+'Browse 1 file to upload 1 file, Default folder is Busint\Custom\PurchaseOrders
+f.Intrinsic.Control.Try
+	v.Local..BulkDeclareString(sError,sFile,sSourceDir,sFilePath)
+	
+	f.Intrinsic.String.Build("{0}\Custom\PurchaseOrders\",v.Caller.BusintDir,v.Local.sSourceDir)	
+	F.Intrinsic.UI.ShowOpenFileDialog(v.Local.sSourceDir,"*|*.xls*","",V.Local.sFilePath)
+	f.Intrinsic.Control.If(v.Local.sFilePath.IsCancel,=,False)	
+		gui.Form.txt1FilePath.Text(v.Local.sFilePath)
+	f.Intrinsic.Control.EndIf
+	
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")	
+F.Intrinsic.Control.EndTry
+Program.Sub.cmdBrowseFile_Click.End
+
+Program.Sub.cmdUp1File_Click.Start
+'Upload 1 excel file (upload 1 by 1). 
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.bExists.Declare
+	v.Local.bLocked.Declare
+	v.Local.sMsg.Declare
+	
+	gui.Form..Visible(False)
+	f.Intrinsic.UI.InvokeWaitDialog("Processing...")
+	'Check if Excel file exists, and maxline must be >= 8
+	f.Intrinsic.File.Exists(v.Screen.Form!txt1FilePath.Text.Trim,v.Local.bExists)
+	f.Intrinsic.Control.If(v.Local.bExists)
+		f.Intrinsic.Control.If(v.Screen.Form!txtMaxLine.Text,<,8)
+			f.Intrinsic.UI.Msgbox("Max Line must be greater than 7")
+		f.Intrinsic.Control.else
+			f.Intrinsic.Control.CallSub("Open_Log_File_For_Writing")
+			'Check if file is opened, if yes, exitsub, will not upload
+			F.Intrinsic.File.IsFileLocked(v.Screen.Form!txt1FilePath.Text.Trim,v.Local.bLocked)
+			f.Intrinsic.control.If(v.Local.bLocked)
+				f.Intrinsic.UI.CloseWaitDialog
+				f.Intrinsic.String.Build("File {0} must be closed to process. No upload for this file has been done.",v.Screen.Form!txt1FilePath.Text.Trim,v.Local.sMsg)
+				f.Intrinsic.UI.Msgbox(v.Local.sMsg)
+				f.Intrinsic.Control.ExitSub
+			f.Intrinsic.Control.EndIf			
+			f.Intrinsic.Control.CallSub("Upload_1File","sFile",v.Screen.Form!txt1FilePath.Text.Trim)
+			f.Intrinsic.File.CloseFile(v.Global.iFileHandle)
+		f.Intrinsic.Control.EndIf		
+	f.Intrinsic.Control.Else
+		f.Intrinsic.UI.Msgbox("File not exist")	
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.UI.CloseWaitDialog
+	'Process finishes, show log info
+	gui.F_Log..Show
+	
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")	
+F.Intrinsic.Control.EndTry
+Program.Sub.cmdUp1File_Click.End
+
+Program.Sub.cmdUpAll_Click.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.sSourceDir.Declare
+	v.Local.sFiles.Declare
+	v.Local.iCnt.Declare
+	v.Local.bLocked.Declare
+	v.Local.sMsg.Declare
+	
+	f.Intrinsic.Control.If(v.Screen.Form!txtMaxLine.Text,<,8)
+		f.Intrinsic.UI.Msgbox("Max Line must be greater than 7")
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	
+	f.Intrinsic.String.Build("{0}\Custom\PurchaseOrders\",v.Caller.BusintDir,v.Local.sSourceDir)	
+	F.Intrinsic.File.GetFileList(v.Local.sSourceDir,16,v.Local.sFiles)
+	'Check if there is any files
+	f.Intrinsic.Control.If(v.Local.sFiles.Trim,=,"")
+		f.Intrinsic.UI.Msgbox("No Files to upload")
+		f.Intrinsic.Control.ExitSub		
+	f.Intrinsic.Control.EndIf
+	
+	'Get the files list to an array
+	f.Intrinsic.String.Split(v.Local.sFiles,":",v.Local.sfiles)
+	
+	gui.Form..Visible(False)
+	gui.F_ProBar..Visible(True)
+	gui.F_ProBar.proBarAll.Max(v.Local.sFiles.UBound)
+	f.Intrinsic.Control.CallSub("Open_Log_File_For_Writing")
+	'Loop and upload files
+	f.Intrinsic.Control.For(v.Local.iCnt,0,v.Local.sFiles.UBound,1)
+		gui.F_ProBar.proBarAll.Value(v.Local.iCnt)
+		f.Intrinsic.String.Build("{0}\Custom\PurchaseOrders\{1}",v.Caller.BusintDir,v.Local.sFiles(v.Local.iCnt),v.Local.sFiles(v.Local.iCnt))
+		'Check if file is opened, if yes, exitfor, no upload for this file
+		F.Intrinsic.File.IsFileLocked(v.Local.sFiles(v.Local.iCnt),v.Local.bLocked)
+		f.Intrinsic.control.If(v.Local.bLocked)
+			f.Intrinsic.String.Build("File {0} must be closed to process. No upload for this file has been done. Please see the log for other files",v.Local.sFiles(v.Local.iCnt),v.Local.sMsg)
+			f.Intrinsic.UI.Msgbox(v.Local.sMsg)
+			f.Intrinsic.Control.ExitFor(v.Local.iCnt)			
+		f.Intrinsic.Control.EndIf
+		'Upload that file
+		f.Intrinsic.Control.CallSub("Upload_1File","sFile",v.Local.sFiles(v.Local.iCnt))	
+	f.Intrinsic.Control.Next(v.Local.iCnt)
+	
+	'Close log file
+	f.Intrinsic.File.CloseFile(v.Global.iFileHandle)
+	'Process finishes, show log info
+	gui.F_ProBar.proBarAll.Visible(False)
+	gui.F_Log..Show
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry
+Program.Sub.cmdUpAll_Click.End
+
+Program.Sub.Open_Log_File_For_Writing.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	
+	f.Intrinsic.File.GetHandle(v.Global.iFileHandle)
+	F.Intrinsic.File.OpenForAppend(v.Global.sLogFilePath,V.Global.iFileHandle)
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")	
+F.Intrinsic.Control.EndTry
+Program.Sub.Open_Log_File_For_Writing.End
+
+Program.Sub.Upload_1File.Start
+f.Intrinsic.Control.Try
+	v.Local..BulkDeclareString(sError,sSQL,sRet,sHold,sFileName,sInputString,sLine,,sLogContent,sCell,sVendor,sPO,sPart,sVendorPart,sGLAccount,sDescr,sQty,sPrice,sText_Lines_To_Upload,sPOTextFile,sFileUploadOK,sMoved)
+	v.Local..BulkDeclareLong(iLine,iLineExcel,iError,iPOLine,iMoveFileReturn)
+	v.Local..BulkDeclareBoolean(bTotal,bNum)
+	v.Local..BulkDeclareFloat(fQty,fPrice)
+	
+	F.Intrinsic.File.GetFileNameFromFQN(v.Args.sFile,v.Local.sFileName)
+	
+	'1/Parse Excel File and Validate values before uploading
+	'The function will read the excel file with numbers of columns and rows specified. This way will help to read the excel file faster.
+	Function.Automation.MSExcel.ReadSpreadsheet(v.Args.sFile,8,v.Screen.Form!txtMaxLine.Text,v.Local.sInputString)
+	'Split file to Lines
+	f.Intrinsic.String.Split(v.Local.sInputString,"$!$",v.Local.sLine)
+	
+	'Get Vendor Number(B2), Purchase Order Number(B3)
+	f.Intrinsic.String.Split(v.Local.sLine(1),"*!*",v.Local.sCell)
+	f.Intrinsic.String.LPad(v.Local.sCell(1).Trim,"0",6,v.Local.sVendor)
+	f.Intrinsic.String.Split(v.Local.sLine(2),"*!*",v.Local.sCell)
+	f.Intrinsic.String.LPad(v.Local.sCell(1).Trim,"0",7,v.Local.sPO)
+	
+	'Check Vendor
+	f.Intrinsic.Control.CallSub("Check_Vendor","sVendor",v.Local.sVendor)
+	f.Intrinsic.Control.If(v.Args.bVendorExist.Not)
+		f.Intrinsic.Math.Add(v.Local.iError,1,v.Local.iError)
+		'Write to log file that Vendor does not exist	
+		f.Intrinsic.String.Build("{0}{1}: File {2}{3}Line: 2 Vendor '{4}' does not exist{5}",v.Local.sLogContent,v.Ambient.Now,v.Local.sFileName,v.Ambient.Tab,v.Local.sVendor,v.Ambient.NewLine,v.Local.sLogContent)
+	f.Intrinsic.Control.EndIf
+	
+	'Check PO
+	f.Intrinsic.Control.CallSub("Check_PO","sPO",v.Local.sPO)
+	f.Intrinsic.Control.If(v.Args.bPOExist.Not)
+		f.Intrinsic.Math.Add(v.Local.iError,1,v.Local.iError)
+		'Write to log file that PO does not exist	
+		f.Intrinsic.String.Build("{0}{1}: File {2}{3}Line: 3 PO '{4}' does not exist{5}",v.Local.sLogContent,v.Ambient.Now,v.Local.sFileName,v.Ambient.Tab,v.Local.sPO,v.Ambient.NewLine,v.Local.sLogContent)
+	f.Intrinsic.Control.EndIf
+	
+	'PO and Vendor Mismatch
+	f.Intrinsic.Control.If(v.Args.bPOExist,=,True,and,v.Local.sVendor,<>,v.Args.sVendorWithPO)
+		f.Intrinsic.Math.Add(v.Local.iError,1,v.Local.iError)
+		'Write to log file that PO and Vendor mismatch	
+		f.Intrinsic.String.Build("{0}{1}: File {2}{3} Vendor in current PO Line 3 does not match with Vendor Line 2 in the Excel file{4}",v.Local.sLogContent,v.Ambient.Now,v.Local.sFileName,v.Ambient.Tab,v.Ambient.NewLine,v.Local.sLogContent)
+	f.Intrinsic.Control.EndIf
+	
+	'Get current MaxLine
+	f.Intrinsic.String.Build("select Max(left(record_no,3)) from v_PO_Lines where purchase_order = '{0}'",v.Local.sPO,v.Local.sSQL)
+	f.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSQL,v.Local.sRet)
+	v.Local.iPOLine.Set(v.Local.sRet)
+	
+	'Parse PO Lines from line 8 on
+	f.Intrinsic.Control.For(v.Local.iLine,7,v.Local.sLine.UBound,1)		
+		f.Intrinsic.String.Split(v.Local.sLine(v.Local.iLine),"*!*",v.Local.sCell)
+		
+		'Check if it is at the line of Total, exit the loop
+		f.Intrinsic.String.UCase(v.Local.sCell(5).Trim,v.Local.sCell(5))
+		f.Intrinsic.String.Instr(v.Local.sCell(5),"TOTAL",True,v.Local.bTotal)
+		f.Intrinsic.Control.If(v.Local.bTotal)
+			f.Intrinsic.Control.ExitFor(v.Local.iLine)
+		f.Intrinsic.Control.EndIf
+		
+		'Line numbers
+		f.Intrinsic.Math.Add(v.Local.iLine,1,v.Local.iLineExcel)
+		f.Intrinsic.Math.Add(v.Local.iPOLine,1,v.Local.iPOLine)
+		
+		'Check Account
+		f.Intrinsic.String.RPad(v.Local.sCell(0)," ",15,v.Local.sGLAccount)
+		f.Intrinsic.Control.If(v.Dictionary.GLAccountDict![v.Local.sGLAccount],=,"")
+			f.Intrinsic.Math.Add(v.Local.iError,1,v.Local.iError)
+			f.Intrinsic.String.Build("{0}{1}: File {2}{3}Line: {4}{3}GL Account '{5}' does not exist{6}",v.Local.sLogContent,v.Ambient.Now,v.Local.sFileName,v.Ambient.Tab,v.Local.iLineExcel,v.Local.sGLAccount,v.Ambient.NewLine,v.Local.sLogContent)
+		f.Intrinsic.Control.EndIf
+		
+		'Check Part		
+		f.Intrinsic.String.RPad(v.Local.sCell(1)," ",20,v.Local.sPart)
+		f.Intrinsic.String.RPad(v.Local.sCell(2)," ",20,v.Local.sVendorPart)
+		'Part not exist in Inventory
+		f.Intrinsic.Control.If(v.Dictionary.InvPartsDict![v.Local.sPart],=,"")
+			'Vendor Part is empty
+			f.Intrinsic.Control.If(v.Local.sVendorPart.Trim,=,"")
+				f.Intrinsic.Math.Add(v.Local.iError,1,v.Local.iError)
+				f.Intrinsic.String.Build("{0}{1}: File {2}{3}Line: {4} Inventory Part: '{5}' does not exist and Vendor Part is empty{6}",v.Local.sLogContent,v.Ambient.Now,v.Local.sFileName,v.Ambient.Tab,v.Local.iLineExcel,v.Local.sPart,v.Ambient.NewLine,v.Local.sLogContent)
+			'Part is invalid, but Vendor Part has a value => use VendorPart
+			f.Intrinsic.Control.Else
+				v.Local.sPart.Set(v.Local.sVendorPart)
+			f.Intrinsic.Control.EndIf	
+		f.Intrinsic.Control.EndIf
+		
+		'Get Description
+		f.Intrinsic.String.RPad(v.Local.sCell(3).Trim," ",30,v.Local.sDescr)
+		
+		'Get Quantity
+		v.Local.sQty.Set(v.Local.sCell(5).Trim)
+		f.Intrinsic.Math.IsNumeric(v.Local.sQty,v.Local.bNum)
+		f.Intrinsic.Control.If(v.Local.bNum.Not)
+			f.Intrinsic.Math.Add(v.Local.iError,1,v.Local.iError)
+			f.Intrinsic.String.Build("{0}{1}: File {2}{3}Line: {4} Quantity: '{5}' is not numeric{6}",v.Local.sLogContent,v.Ambient.Now,v.Local.sFileName,v.Ambient.Tab,v.Local.iLineExcel,v.Local.sQty,v.Ambient.NewLine,v.Local.sLogContent)
+			v.Local.fQty.Set(0)
+		f.Intrinsic.Control.Else
+			v.Local.fQty.Set(v.Local.sQty)
+		f.Intrinsic.Control.EndIf
+		
+		'Get Price (Purchase Cost)
+		v.Local.sPrice.Set(v.Local.sCell(6).Trim)
+		f.Intrinsic.Math.IsNumeric(v.Local.sPrice,v.Local.bNum)
+		f.Intrinsic.Control.If(v.Local.bNum.Not)
+			f.Intrinsic.Math.Add(v.Local.iError,1,v.Local.iError)
+			f.Intrinsic.String.Build("{0}{1}: File {2}{3}Line: {4} Price: '{5}' is not numeric{6}",v.Local.sLogContent,v.Ambient.Now,v.Local.sFileName,v.Ambient.Tab,v.Local.iLineExcel,v.Local.sPrice,v.Ambient.NewLine,v.Local.sLogContent)
+			v.Local.fPrice.Set(0)
+		f.Intrinsic.Control.Else
+			v.Local.fPrice.Set(v.Local.sPrice)
+		f.Intrinsic.Control.EndIf
+		
+		'Format the line prepared to write to PURORDER.txt in Global\Files folder
+		f.Intrinsic.Control.CallSub("Create_Text_Line","sVendor",v.Local.sVendor,"sPO",v.Local.sPO,"iPOLine",v.Local.iPOLine,"sGLAccount",v.Local.sGLAccount,"sPart",v.Local.sPart,"sDescr",v.Local.sDescr,"fQty",v.Local.fQty,"fPrice",v.Local.fPrice)		
+		f.Intrinsic.String.Build("{0}{1}{2}",v.Local.sText_Lines_To_Upload,v.Args.sTextLine,v.Ambient.NewLine,v.Local.sText_Lines_To_Upload)
+	
+	f.Intrinsic.Control.Next(v.Local.iLine)
+	
+	'If there is no line from line 8, log info and exit, will not upload this file
+	f.Intrinsic.Control.If(v.Local.iLineExcel,=,0)
+		f.Intrinsic.String.Build("{0}{1}: No Line to Upload{2}",v.Local.sLogContent,v.Local.sFileName,v.Ambient.NewLine,v.Local.sLogContent)
+	f.Intrinsic.Control.EndIf
+	
+	'If there is any error, log info and exit, will not upload this file
+	f.Intrinsic.Control.If(v.Local.iError,>,0,or,v.Local.iLineExcel,=,0)
+		f.Intrinsic.String.Build("{0}: {1} Errors{2}{3}",v.Local.sFileName,v.Local.iError,v.Ambient.NewLine,v.Local.sLogContent,v.Local.sLogContent)
+		F.Intrinsic.File.WriteLine(V.Global.iFileHandle,v.Local.sLogContent)
+		f.Intrinsic.String.Build("{0}{1}{2}",v.Screen.F_Log!txtLog.Text.Trim,v.Ambient.NewLine,v.Local.sLogContent,v.Local.sHold)
+		gui.F_Log.txtLog.Text(v.Local.sHold)		
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+	
+	'2/ All values have been validated, now write Lines to Text file for the callwrapper to upload
+	F.Intrinsic.String.Build("{0}\PURORDER.txt",V.Caller.FilesDir,v.Local.sPOTextFile)
+	f.Intrinsic.File.String2File(v.Local.sPOTextFile,v.Local.sText_Lines_To_Upload)
+	F.Global.General.CallWrapperSync(50,"UPLPUROR/U/A")
+	
+	'3/Move File from PurchaseOrders to PO_Uploaded
+	f.Intrinsic.String.Split(v.Local.sFileName,".",v.Local.sFileName)	
+	f.Intrinsic.String.Build("{0}\Custom\PO_Uploaded\{1}_{2}_{3}_{4}.{5}",v.Caller.BusintDir,v.Local.sFileName(0),v.Caller.User,v.Caller.CompanyCode,v.Ambient.Now.FormatDDMMYYHhNnSs,v.Local.sFileName(1),v.Local.sFileUploadOK)
+	f.Intrinsic.File.MoveFile(v.Args.sFile,v.Local.sFileUploadOK,v.Local.iMoveFileReturn)
+	
+	'4/Log: File uploaded successfully
+	f.Intrinsic.Control.If(v.Local.iMoveFileReturn,=,1)
+		v.Local.sMoved.Set("Yes")
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.String.Build("{0}{2}{3}{1}: File {2} uploaded successfully{3}Moved: {4}{3}",v.Local.sLogContent,v.Ambient.Now,v.Local.sFileName,v.Ambient.NewLine,v.Local.sMoved,v.Local.sLogContent)
+	F.Intrinsic.File.WriteLine(V.Global.iFileHandle,v.Local.sLogContent)
+	f.Intrinsic.String.Build("{0}{1}{2}",v.Screen.F_Log!txtLog.Text.Trim,v.Ambient.NewLine,v.Local.sLogContent,v.Local.sHold)
+	gui.F_Log.txtLog.Text(v.Local.sHold)	
+	
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry	
+Program.Sub.Upload_1File.End
+
+Program.Sub.Check_Vendor.Start
+'Check if Vendor exists
+f.Intrinsic.Control.Try
+	v.Local..BulkDeclareString(sError,sSQL,sRet)
+	v.Local.bExist.Declare
+	
+	f.Intrinsic.String.Build("Select Vendor from V_Vendor_Master where Vendor = '{0}'",v.Args.sVendor,v.Local.sSQL)
+	f.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSQL,v.Local.sRet)
+	f.Intrinsic.Control.If(v.Local.sRet,<>,"")
+		v.Local.bExist.Set(True)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.Variable.AddRV("bVendorExist",v.Local.bExist)
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry	
+Program.Sub.Check_Vendor.End
+
+Program.Sub.Check_PO.Start
+'Check if PO exists
+f.Intrinsic.Control.Try
+	v.Local..BulkDeclareString(sError,sSQL,sRet,sVendor)
+	v.Local.bExist.Declare
+	
+	f.Intrinsic.String.Build("Select Purchase_Order,Vendor from V_PO_Header where Purchase_Order = '{0}'",v.Args.sPO,v.Local.sSQL)
+	f.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSQL,v.Local.sRet)
+	f.Intrinsic.Control.If(v.Local.sRet,<>,"")
+		v.Local.bExist.Set(True)
+		f.Intrinsic.String.Split(v.Local.sRet,"*!*",v.Local.sRet)
+		v.Local.sVendor.Set(v.Local.sRet(1))
+	f.Intrinsic.Control.Else
+		v.Local.bExist.Set(False)
+		v.Local.sVendor.Set("")
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.Variable.AddRV("bPOExist",v.Local.bExist)
+	f.Intrinsic.Variable.AddRV("sVendorWithPO",v.Local.sVendor)
+
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry
+Program.Sub.Check_PO.End
+
+Program.Sub.Create_Text_Line.Start
+f.Intrinsic.Control.Try
+	v.Local..BulkDeclareString(sError,sLine,sHold)
+	
+	'PO, already formated 7 chars
+	v.Local.sLine.Set(v.Args.sPO)
+	'Line num
+	f.Intrinsic.String.LPad(v.Args.iPOLine,"0",3,v.Local.sHold)
+	f.Intrinsic.String.Build("{0}{1}",v.Local.sLine,v.Local.sHold,v.Local.sLine)
+	'Part num already formateed 20 chars
+	f.Intrinsic.String.Build("{0}{1}",v.Local.sLine,v.Args.sPart,v.Local.sLine)
+	'Location - Customer only use 1 location	
+	'Descr already formateed 30 chars. Unit of measure always EA
+	f.Intrinsic.String.RPad(v.Local.sLine," ",32,v.Local.sLine)
+	f.Intrinsic.String.Build("{0}{1}EA",v.Local.sLine,v.Args.sDescr,v.Local.sLine)
+	'GL Account
+	f.Intrinsic.String.RPad(v.Local.sLine," ",100,v.Local.sLine)
+	f.Intrinsic.String.RPad(v.args.sGLAccount," ",15,v.Local.sHold)
+	f.Intrinsic.String.Build("{0}{1}",v.Local.sLine,v.Local.sHold,v.Local.sLine)
+	'Purchasing Cost
+	f.Intrinsic.String.RPad(v.Local.sLine," ",136,v.Local.sLine)
+	f.Intrinsic.String.Format(v.Args.fPrice,"0.######",v.Local.sHold)
+	f.Intrinsic.String.LPad(v.Local.sHold,"0",16,v.Local.sHold)
+	f.Intrinsic.String.Build("{0}{1}",v.Local.sLine,v.Local.sHold,v.Local.sLine)
+	'Purchasing Quantity Ordered
+	f.Intrinsic.String.RPad(v.Local.sLine," ",168,v.Local.sLine)
+	f.Intrinsic.String.Format(v.Args.fQty,"0.####",v.Local.sHold)
+	f.Intrinsic.String.LPad(v.Local.sHold,"0",16,v.Local.sHold)
+	f.Intrinsic.String.Build("{0}{1}",v.Local.sLine,v.Local.sHold,v.Local.sLine)
+	'Exchange Currency
+	f.Intrinsic.String.RPad(v.Local.sLine," ",339,v.Local.sLine)
+	f.Intrinsic.String.Build("{0}USD",v.Local.sLine,v.Local.sLine)
+	'Cost Source Code: M for Manual
+	f.Intrinsic.String.RPad(v.Local.sLine," ",587,v.Local.sLine)
+	f.Intrinsic.String.Build("{0}M",v.Local.sLine,v.Local.sLine)
+	
+	f.Intrinsic.String.RPad(v.Local.sLine," ",653,v.Local.sLine)
+	
+	f.Intrinsic.Variable.AddRV("sTextLine",v.Local.sLine)
+	
+F.Intrinsic.Control.Catch
+	Function.Intrinsic.String.Build("Subroutine Error {0}{0}Subroutine: {1}{0}Error Occurred {2} with description {3}",V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry
+
+Program.Sub.Create_Text_Line.End
+
+Program.Sub.F_ProBar_UnLoad.Start
+gui.F_ProBar..Visible(False)
+Program.Sub.F_ProBar_UnLoad.End
+
+Program.Sub.Comments.Start
+Program.Sub.Comments.End
